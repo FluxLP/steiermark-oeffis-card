@@ -61,7 +61,7 @@ A installation tutorial is available on YouTube (Video in German!): https://yout
 
 2. **Configure options** through the visual editor:
    - **Number of departures**: Select how many departures to display (1-7)
-   - **Line colors**: Assign custom colors to specific transit lines
+   - **Colors**: All stations of the configured sensors and their lines are listed automatically. Tick a station or a line and pick a color.
 
 ### YAML Configuration
 
@@ -101,6 +101,9 @@ line_colors:        # Custom colors for specific lines
 Each line color entry requires:
 - `line`: The line number/name as a string (e.g., "64", "5E")
 - `color`: Hex color code (e.g., "#FF5722")
+- `station` (optional): Only apply the color to departures from this station
+
+Color priority: line color for a station → station color → line color without station.
 
 #### Station Colors Configuration
 
@@ -124,7 +127,20 @@ station_colors:
     color: "#4CAF50"
 ```
 
-This requires a version of the integration that provides the `station` attribute.
+Line colors per station:
+
+```yaml
+line_colors:
+  - line: "16"
+    station: "Graz Hauptbahnhof"
+    color: "#2196F3"
+```
+
+This requires the integration version 1.2.3 or newer (attributes `station` and `available_lines`).
+
+### Troubleshooting: card shows the old name "PH Steiermark Oeffi Card"
+
+The old card is still registered as a resource and is loaded first. Remove `/hacsfiles/PH_Steiermark_Oeffi_Card/steirische-linien-card.js` under **Settings → Dashboards → Resources** (three-dot menu, top right), uninstall the old card in HACS and reload the browser.
 
 ## Display Features
 

@@ -150,11 +150,13 @@ class SteirischeLinienCard extends HTMLElement {
         statusText = 'FAHRPLAN';
       }
 
-      // Get custom color: station color takes priority over line color
       let lineColor = '';
+      // Priority: line color for this station > station color > line color for all stations
+      const lineColors = this.config.line_colors || [];
+      const stationLineConfig = lineColors.find(lc => lc.station !== undefined && lc.station === dep.station && lc.line === dep.line);
       const stationConfig = (this.config.station_colors || []).find(sc => sc.station === dep.station);
-      const colorConfig = (this.config.line_colors || []).find(lc => lc.line === dep.line);
-      const color = (stationConfig && stationConfig.color) || (colorConfig && colorConfig.color);
+      const colorConfig = lineColors.find(lc => lc.station === undefined && lc.line === dep.line);
+      const color = (stationLineConfig && stationLineConfig.color) || (stationConfig && stationConfig.color) || (colorConfig && colorConfig.color);
       if (color) {
         lineColor = `style="background-color: ${this.escapeHtml(color)}"`;
       }
@@ -207,22 +209,42 @@ class SteirischeLinienCard extends HTMLElement {
   }
 }
 
-// Card Editor
+// Card Editor (uses plain HTML inputs so it does not depend on Home Assistant internal components)
 class SteirischeLinienCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    // Material Design Icon for add
-    this.addIcon = "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z";
-  }
-
   setConfig(config) {
     this._config = config;
     this.render();
   }
 
+  // Stations of the configured sensors with their available lines
+  getStations() {
+    const stations = new Map();
+    for (let i = 1; i <= 7; i++) {
+      const entityId = this._config[`sensor_${i}`] || `sensor.transit_departure_${i}`;
+      const entity = this._hass && this._hass.states[entityId];
+      if (!entity) continue;
+      const attributes = entity.attributes;
+      const station = attributes.station || '';
+      if (!stations.has(station)) stations.set(station, new Set());
+      const lines = stations.get(station);
+      (attributes.available_lines || []).forEach(line => lines.add(line));
+      if (attributes.line) lines.add(attributes.line);
+    }
+    // Keep lines that already have a color, even if they are not departing right now
+    (this._config.line_colors || []).forEach(lc => {
+      if (lc.station !== undefined && stations.has(lc.station) && lc.line) {
+        stations.get(lc.station).add(lc.line);
+      }
+    });
+    return [...stations.entries()].map(([station, lines]) => ({
+      station,
+      lines: [...lines].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    }));
+  }
+
   render() {
-    if (!this.hass || !this._config) return;
-    
+    if (!this._hass || !this._config) return;
+
     const stations = this.getStations();
 
     // Prevent re-rendering if already rendered with same config and stations
@@ -232,308 +254,151 @@ class SteirischeLinienCardEditor extends HTMLElement {
 
     const lineColors = this._config.line_colors || [];
     const stationColors = this._config.station_colors || [];
+    const globalLineColors = lineColors.filter(lc => lc.station === undefined);
+    const count = this._config.departure_count || 7;
 
     this.innerHTML = `
       <div class="card-config">
         <div class="config-section">
           <h3 class="section-title">Display Configuration</h3>
-          <p class="section-description">Choose how many departures to display</p>
-          <ha-select
-            id="departure_count"
-            label="Number of departures"
-          >
-            ${[1, 2, 3, 4, 5, 6, 7].map(n => `
-              <mwc-list-item value="${n}">${n} departure${n > 1 ? 's' : ''}</mwc-list-item>
-            `).join('')}
-          </ha-select>
+          <label class="field">
+            <span>Number of departures</span>
+            <select id="departure_count">
+              ${[1, 2, 3, 4, 5, 6, 7].map(n => `
+                <option value="${n}" ${n === count ? 'selected' : ''}>${n} departure${n > 1 ? 's' : ''}</option>
+              `).join('')}
+            </select>
+          </label>
         </div>
-        
+
         <div class="config-section">
-          <h3 class="section-title">Station Colors</h3>
-          <p class="section-description">Color the line badges by the station they depart from (takes priority over line colors)</p>
+          <h3 class="section-title">Colors</h3>
+          <p class="section-description">Tick a station or line and pick a color. A line color for a station takes priority over the station color.</p>
           ${stations.length === 0 ? `
-            <p class="section-description">No stations found. Update the Steiermark Öffis integration so the sensors provide a station attribute.</p>
-          ` : stations.map((station, index) => {
+            <p class="section-description">No sensors found. Check the sensors of this card in Developer Tools → States.</p>
+          ` : stations.map(({ station, lines }, s) => {
             const sc = stationColors.find(c => c.station === station);
             return `
-              <div class="station-color-row">
-                <input
-                  type="checkbox"
-                  class="station-color-enabled"
-                  data-index="${index}"
-                  ${sc ? 'checked' : ''}
-                  title="Use a color for this station"
-                />
-                <span class="station-name">${this.escapeHtml(station)}</span>
-                <input
-                  type="color"
-                  class="station-color"
-                  data-index="${index}"
-                  value="${sc && sc.color ? sc.color : '#2196F3'}"
-                  title="Choose color"
-                />
+              <div class="station">
+                ${station ? `
+                  <div class="color-row station-row">
+                    <input type="checkbox" class="enabled" data-kind="station" data-station="${s}" ${sc ? 'checked' : ''} title="Use a color for the whole station">
+                    <span class="name">${this.escapeHtml(station)}</span>
+                    <input type="color" class="color" data-kind="station" data-station="${s}" value="${sc ? sc.color : '#2196F3'}" title="Station color">
+                  </div>
+                ` : ''}
+                ${lines.length === 0 ? `<p class="section-description">No lines known yet.</p>` : ''}
+                ${lines.map((line, l) => {
+                  const lc = lineColors.find(c => c.station === station && c.line === line);
+                  const gc = globalLineColors.find(c => c.line === line);
+                  return `
+                    <div class="color-row line-row">
+                      <input type="checkbox" class="enabled" data-kind="line" data-station="${s}" data-line="${l}" ${lc ? 'checked' : ''} title="Use a color for this line">
+                      <span class="badge" style="background-color: ${this.escapeHtml((lc && lc.color) || (sc && sc.color) || (gc && gc.color) || 'var(--primary-color)')}">${this.escapeHtml(line)}</span>
+                      <span class="name">Line ${this.escapeHtml(line)}</span>
+                      <input type="color" class="color" data-kind="line" data-station="${s}" data-line="${l}" value="${lc ? lc.color : '#2196F3'}" title="Line color">
+                    </div>
+                  `;
+                }).join('')}
               </div>
             `;
           }).join('')}
         </div>
 
-        <div class="config-section">
-          <h3 class="section-title">Line Colors</h3>
-          <p class="section-description">Set custom colors for specific line numbers</p>
-        </div>
-        
-        <div id="line-colors-container">
-          ${lineColors.map((lc, index) => `
-            <div class="line-color-row" data-index="${index}">
-              <ha-textfield
-                class="line-filter"
-                label="Line Number"
-                placeholder="e.g., 64"
-                data-index="${index}"
-              ></ha-textfield>
-              <input
-                type="color"
-                class="line-color"
-                value="${lc.color || '#2196F3'}"
-                title="Choose color"
-              />
-              <button
-                class="remove-line-color"
-                data-index="${index}"
-                title="Remove"
-              >×</button>
-            </div>
-          `).join('')}
-        </div>
-        
-        <ha-button
-          id="add-line-color"
-          raised
-        ><ha-icon .path="${this.addIcon}"></ha-icon>Add Line Color</ha-button>
+        ${globalLineColors.length ? `
+          <div class="config-section">
+            <h3 class="section-title">Line Colors for all Stations</h3>
+            <p class="section-description">Configured in YAML without a station.</p>
+            ${globalLineColors.map(lc => `
+              <div class="color-row">
+                <span class="badge" style="background-color: ${this.escapeHtml(lc.color || '')}">${this.escapeHtml(lc.line || '')}</span>
+                <span class="name">Line ${this.escapeHtml(lc.line || '')}</span>
+                <button class="remove" data-line="${this.escapeHtml(lc.line || '')}" title="Remove">×</button>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
       </div>
       <style>
-        .card-config {
-          padding: 0;
-        }
-        .config-section {
-          margin-bottom: 24px;
-        }
-        .section-title {
-          margin: 0 0 8px 0;
-          font-size: 16px;
-          font-weight: 500;
-          color: var(--primary-text-color);
-        }
-        .section-description {
-          margin: 0 0 16px 0;
-          color: var(--secondary-text-color);
-          font-size: 14px;
-        }
-        ha-textfield {
-          width: 100%;
-          margin-bottom: 16px;
-          display: block;
-        }
-        ha-select {
-          width: 100%;
-          display: block;
-        }
-        .line-color-row {
-          display: flex;
-          gap: 8px;
-          margin-bottom: 16px;
-          align-items: center;
-          height: 56px;
-        }
-        .station-color-row {
-          display: flex;
-          gap: 8px;
-          margin-bottom: 12px;
-          align-items: center;
-          height: 40px;
-        }
-        .station-name {
-          flex: 1;
-          color: var(--primary-text-color);
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-        .station-color {
-          width: 60px;
-          height: 100%;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          outline: 1px solid var(--outline-color);
-        }
-        .line-filter {
-          flex: 1;
-          min-width: 150px;
-          max-width: 50%;
-          margin-bottom: 0;
-        }
-        .line-color {
-          width: 60px;
-          height: 100%;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          outline: 1px solid var(--outline-color);
-          position: relative;
-        }
-        .line-color:focus {
-          outline: 2px solid var(--primary-color);
-        }
-        ha-button {
-          margin-top: 16px;
-        }
-        ha-button ha-icon {
-          margin-right: 8px;
-        }
-        .remove-line-color {
-          width: 32px;
-          height: 32px;
+        .config-section { margin-bottom: 24px; }
+        .section-title { margin: 0 0 8px 0; font-size: 16px; font-weight: 500; color: var(--primary-text-color); }
+        .section-description { margin: 0 0 12px 0; color: var(--secondary-text-color); font-size: 14px; }
+        .field { display: flex; flex-direction: column; gap: 4px; color: var(--secondary-text-color); font-size: 14px; }
+        select {
+          padding: 8px; font-size: 14px; border-radius: 4px;
           border: 1px solid var(--divider-color);
-          border-radius: 4px;
-          background: var(--card-background-color);
-          color: var(--secondary-text-color);
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 18px;
-          font-weight: bold;
+          background: var(--card-background-color); color: var(--primary-text-color);
         }
-        .remove-line-color:hover {
-          color: var(--error-color);
-          border-color: var(--error-color);
+        .station { border: 1px solid var(--divider-color); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
+        .color-row { display: flex; gap: 10px; align-items: center; min-height: 36px; }
+        .station-row { font-weight: 500; border-bottom: 1px solid var(--divider-color); margin-bottom: 4px; padding-bottom: 4px; }
+        .name { flex: 1; color: var(--primary-text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .badge {
+          min-width: 30px; height: 24px; padding: 0 4px; border-radius: 4px;
+          color: white; font-weight: bold; display: flex; align-items: center; justify-content: center;
         }
-        #add-line-color {
-          margin-top: 8px;
-          padding-bottom: 16px;
+        .color { width: 48px; height: 28px; border: none; padding: 0; background: none; cursor: pointer; }
+        .remove {
+          width: 28px; height: 28px; border: 1px solid var(--divider-color); border-radius: 4px;
+          background: var(--card-background-color); color: var(--secondary-text-color); cursor: pointer;
         }
+        .remove:hover { color: var(--error-color); border-color: var(--error-color); }
       </style>
     `;
-    
-    // Set values immediately after creating elements
-    const departureSelect = this.querySelector('#departure_count');
-    if (departureSelect) {
-      departureSelect.value = (this._config.departure_count || 7).toString();
-    }
-    
-    // Set line filter values
-    lineColors.forEach((lc, index) => {
-      const lineInput = this.querySelector(`.line-filter[data-index="${index}"]`);
-      if (lineInput) {
-        lineInput.value = lc.line || '';
-      }
-    });
 
-    // Add event listener for departure count
-    const departureCount = this.querySelector('#departure_count');
-    if (departureCount) {
-      departureCount.addEventListener('change', (e) => {
-        this._config = {
-          ...this._config,
-          departure_count: parseInt(e.target.value)
-        };
-        this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: this._config } }));
-      });
-    }
-
-    // Station colors
-    const updateStationColor = (index) => {
-      const station = stations[index];
-      const enabled = this.querySelector(`.station-color-enabled[data-index="${index}"]`).checked;
-      const color = this.querySelector(`.station-color[data-index="${index}"]`).value;
-      const stationColors = (this._config.station_colors || []).filter(sc => sc.station !== station);
-      if (enabled) {
-        stationColors.push({ station, color });
-      }
-      this._config = { ...this._config, station_colors: stationColors };
-      this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: this._config } }));
+    const fireChanged = () => {
+      this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: this._config }, bubbles: true, composed: true }));
     };
 
-    this.querySelectorAll('.station-color-enabled').forEach(checkbox => {
-      checkbox.addEventListener('change', () => updateStationColor(parseInt(checkbox.dataset.index)));
+    this.querySelector('#departure_count').addEventListener('change', (e) => {
+      this._config = { ...this._config, departure_count: parseInt(e.target.value) };
+      fireChanged();
     });
 
-    this.querySelectorAll('.station-color').forEach(colorInput => {
+    const selector = (kind, s, l) =>
+      `[data-kind="${kind}"][data-station="${s}"]` + (l === undefined ? '' : `[data-line="${l}"]`);
+
+    const update = (kind, s, l) => {
+      const station = stations[s].station;
+      const enabled = this.querySelector(`.enabled${selector(kind, s, l)}`).checked;
+      const color = this.querySelector(`.color${selector(kind, s, l)}`).value;
+      if (kind === 'station') {
+        const colors = (this._config.station_colors || []).filter(sc => sc.station !== station);
+        if (enabled) colors.push({ station, color });
+        this._config = { ...this._config, station_colors: colors };
+      } else {
+        const line = stations[s].lines[l];
+        const colors = (this._config.line_colors || []).filter(lc => !(lc.station === station && lc.line === line));
+        if (enabled) colors.push({ line, station, color });
+        this._config = { ...this._config, line_colors: colors };
+      }
+      fireChanged();
+    };
+
+    this.querySelectorAll('.enabled').forEach(checkbox => {
+      const { kind, station, line } = checkbox.dataset;
+      checkbox.addEventListener('change', () => update(kind, station, line));
+    });
+
+    this.querySelectorAll('.color').forEach(colorInput => {
+      const { kind, station, line } = colorInput.dataset;
       colorInput.addEventListener('change', (e) => {
         e.stopPropagation();
-        const index = parseInt(colorInput.dataset.index);
-        // Picking a color enables it for this station
-        this.querySelector(`.station-color-enabled[data-index="${index}"]`).checked = true;
-        updateStationColor(index);
+        // Picking a color enables it
+        this.querySelector(`.enabled${selector(kind, station, line)}`).checked = true;
+        update(kind, station, line);
       });
       colorInput.addEventListener('click', (e) => e.stopPropagation());
       colorInput.addEventListener('mousedown', (e) => e.stopPropagation());
     });
 
-    // Add line color button
-    const addButton = this.querySelector('#add-line-color');
-    addButton.addEventListener('click', () => {
-      const lineColors = [...(this._config.line_colors || [])];
-      lineColors.push({ line: '', color: '#2196F3' });
-      this._config = { ...this._config, line_colors: lineColors };
-      this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: this._config } }));
-      this.render();
-    });
-
-    // Line color inputs
-    this.querySelectorAll('.line-color-row').forEach(row => {
-      const index = parseInt(row.dataset.index);
-      
-      const lineInput = row.querySelector('.line-filter');
-      lineInput.addEventListener('change', (e) => {
-        const lineColors = [...(this._config.line_colors || [])];
-        lineColors[index] = { ...lineColors[index], line: e.target.value };
-        this._config = { ...this._config, line_colors: lineColors };
-        this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: this._config } }));
-      });
-
-      const colorInput = row.querySelector('.line-color');
-      colorInput.addEventListener('change', (e) => {
-        e.stopPropagation();
-        const lineColors = [...(this._config.line_colors || [])];
-        lineColors[index] = { ...lineColors[index], color: e.target.value };
-        this._config = { ...this._config, line_colors: lineColors };
-        this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: this._config } }));
-      });
-      
-      // Prevent color picker from closing when clicking inside
-      colorInput.addEventListener('click', (e) => {
-        e.stopPropagation();
-      });
-      
-      colorInput.addEventListener('mousedown', (e) => {
-        e.stopPropagation();
-      });
-
-      const removeButton = row.querySelector('.remove-line-color');
-      removeButton.addEventListener('click', () => {
-        const lineColors = [...(this._config.line_colors || [])];
-        lineColors.splice(index, 1);
-        this._config = { ...this._config, line_colors: lineColors };
-        this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: this._config } }));
-        this.render();
+    this.querySelectorAll('.remove').forEach(button => {
+      button.addEventListener('click', () => {
+        const colors = (this._config.line_colors || []).filter(lc => !(lc.station === undefined && lc.line === button.dataset.line));
+        this._config = { ...this._config, line_colors: colors };
+        fireChanged();
       });
     });
-  }
-
-  // Distinct station names of the sensors configured in this card
-  getStations() {
-    const stations = [];
-    for (let i = 1; i <= 7; i++) {
-      const entityId = this._config[`sensor_${i}`] || `sensor.transit_departure_${i}`;
-      const entity = this._hass && this._hass.states[entityId];
-      const station = entity && entity.attributes.station;
-      if (station && !stations.includes(station)) {
-        stations.push(station);
-      }
-    }
-    return stations;
   }
 
   escapeHtml(text) {
@@ -552,14 +417,19 @@ class SteirischeLinienCardEditor extends HTMLElement {
   }
 }
 
-customElements.define('steirische-linien-card', SteirischeLinienCard);
-customElements.define('steirische-linien-card-editor', SteirischeLinienCardEditor);
+// Guard against the card being loaded twice (e.g. an old resource still registered)
+if (!customElements.get('steirische-linien-card')) {
+  customElements.define('steirische-linien-card', SteirischeLinienCard);
+  customElements.define('steirische-linien-card-editor', SteirischeLinienCardEditor);
 
-window.customCards = window.customCards || [];
-window.customCards.push({
-  type: "steirische-linien-card",
-  name: "Steiermark Öffi Card",
-  description: "Display transit departures from Steirische Linien",
-  preview: false,
-  documentationURL: "https://github.com/FluxLP/steiermark-oeffis-card"
-});
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: "steirische-linien-card",
+    name: "Steiermark Öffi Card",
+    description: "Display transit departures from Steiermark Öffis",
+    preview: false,
+    documentationURL: "https://github.com/FluxLP/steiermark-oeffis-card"
+  });
+} else {
+  console.warn('Steiermark Öffi Card: steirische-linien-card is already defined. Remove old card resources (e.g. PH_Steiermark_Oeffi_Card) under Settings → Dashboards → Resources.');
+}
