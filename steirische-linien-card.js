@@ -558,8 +558,8 @@ customElements.define('steirische-linien-card-editor', SteirischeLinienCardEdito
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "steirische-linien-card",
-  name: "PH Steiermark Oeffi Card",
+  name: "Steiermark Öffi Card",
   description: "Display transit departures from Steirische Linien",
   preview: false,
-  documentationURL: "https://github.com/gregor-autischer/PH_Steiermark_Oeffi"
+  documentationURL: "https://github.com/FluxLP/steiermark-oeffis-card"
 });

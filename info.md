@@ -1,8 +1,8 @@
-# PH Steiermark Öffi Card
+# Steiermark Öffi Card
 
 ## Beautiful transit departure display for Styrian public transport
 
-This custom Lovelace card provides a clean, modern interface for displaying real-time public transit departures from the PH Steiermark Öffi integration.
+This custom Lovelace card provides a clean, modern interface for displaying real-time public transit departures from the Steiermark Öffis integration. Fork of the original PH_Steiermark_Oeffi_Card by Gregor Autischer, extended with station colors.
 
 ### Key Features
 
@@ -15,7 +15,7 @@ This custom Lovelace card provides a clean, modern interface for displaying real
 ### Requirements
 
 - Home Assistant 2023.1.0 or newer
-- [PH Steiermark Öffi Integration](https://github.com/gregor-autischer/PH_Steiermark_Oeffi) installed and configured
+- [Steiermark Öffis Integration](https://github.com/FluxLP/steiermark-oeffis) installed and configured
 
 ### Quick Start
 
@@ -26,4 +26,4 @@ This custom Lovelace card provides a clean, modern interface for displaying real
 
 ### Support
 
-For issues, feature requests, or questions, please visit our [GitHub repository](https://github.com/gregor-autischer/PH_Steiermark_Oeffi_Card).
+For issues, feature requests, or questions, please visit our [GitHub repository](https://github.com/FluxLP/steiermark-oeffis-card).

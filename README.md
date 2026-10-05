@@ -1,8 +1,12 @@
-# Powerhaus Steiermark Öffi Card - Home Assistant Lovelace Card
+<img src="logo.png" alt="Steiermark Öffi Card Logo" width="160" align="right">
+
+# Steiermark Öffi Card - Home Assistant Lovelace Card
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-A beautiful, customizable Lovelace card for displaying real-time public transit departure information from the [PH Steiermark Öffi Integration](https://github.com/gregor-autischer/PH_Steiermark_Oeffi).
+A beautiful, customizable Lovelace card for displaying real-time public transit departure information from the [Steiermark Öffis Integration](https://github.com/FluxLP/steiermark-oeffis).
+
+This is a fork of the original [PH_Steiermark_Oeffi_Card](https://github.com/gregor-autischer/PH_Steiermark_Oeffi_Card) by Gregor Autischer, extended with station colors for cards that combine several stations.
 
 ![Card Preview](preview_image.png)
 
@@ -17,7 +21,7 @@ A beautiful, customizable Lovelace card for displaying real-time public transit 
 
 ## Prerequisites
 
-This card requires the [PH Steiermark Öffi Integration](https://github.com/gregor-autischer/PH_Steiermark_Oeffi) to be installed and configured first. The integration provides the sensor entities that this card displays.
+This card requires the [Steiermark Öffis Integration](https://github.com/FluxLP/steiermark-oeffis) to be installed and configured first. The integration provides the sensor entities that this card displays.
 
 ## Installation
 
@@ -28,18 +32,18 @@ A installation tutorial is available on YouTube (Video in German!): https://yout
 1. Ensure [HACS](https://hacs.xyz/) is installed
 2. Add this repository as a custom repository:
    - HACS → Frontend → Menu → Custom repositories
-   - Repository: `https://github.com/gregor-autischer/PH_Steiermark_Oeffi_Card`
+   - Repository: `https://github.com/FluxLP/steiermark-oeffis-card`
    - Category: `Dashboard`
 3. Click "Install"
 4. Add the resource (if not automatically added):
    - Settings → Dashboards → Resources → Add Resource
-   - URL: `/hacsfiles/PH_Steiermark_Oeffi_Card/steirische-linien-card.js`
+   - URL: `/hacsfiles/steiermark-oeffis-card/steirische-linien-card.js`
    - Type: JavaScript Module
 5. Restart Home Assistant
 
 ### Option 2: Manual Installation
 
-1. Download `steirische-linien-card.js` from the [latest release](https://github.com/gregor-autischer/PH_Steiermark_Oeffi_Card/releases)
+1. Download `steirische-linien-card.js` from the [latest release](https://github.com/FluxLP/steiermark-oeffis-card/releases)
 2. Copy it to your Home Assistant `config/www/` directory
 3. Add the resource:
    - Settings → Dashboards → Resources → Add Resource
@@ -52,7 +56,7 @@ A installation tutorial is available on YouTube (Video in German!): https://yout
 ### Using the Visual Editor
 
 1. **Add the card** to your dashboard:
-   - Edit Dashboard → Add Card → Search "PH Steiermark"
+   - Edit Dashboard → Add Card → Search "Steiermark Öffi"
    - Or Manual card → Type: `custom:steirische-linien-card`
 
 2. **Configure options** through the visual editor:
@@ -226,8 +230,8 @@ The card uses Home Assistant's theme variables for consistent appearance:
 
 ```bash
 # Clone the repository
-git clone https://github.com/gregor-autischer/PH_Steiermark_Oeffi_Card.git
-cd PH_Steiermark_Oeffi_Card
+git clone https://github.com/FluxLP/steiermark-oeffis-card.git
+cd steiermark-oeffis-card
 
 # The card is a single JavaScript file - no build process required
 # Make your changes to steirische-linien-card.js
@@ -251,4 +255,6 @@ Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## Credits
 
-This card is designed to work with the [PH Steiermark Öffi Integration](https://github.com/gregor-autischer/PH_Steiermark_Oeffi) for Home Assistant.
+This card is designed to work with the [Steiermark Öffis Integration](https://github.com/FluxLP/steiermark-oeffis) for Home Assistant.
+
+Based on the original [PH_Steiermark_Oeffi_Card](https://github.com/gregor-autischer/PH_Steiermark_Oeffi_Card) by Gregor Autischer.
