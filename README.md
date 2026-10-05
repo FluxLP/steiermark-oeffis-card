@@ -12,6 +12,7 @@ A beautiful, customizable Lovelace card for displaying real-time public transit 
 - 🎯 **Real-time status indicators** - Color-coded departure times indicate data source and delays
 - 🔢 **Configurable departure count** - Display 1-7 departures
 - 🌈 **Custom line colors** - Assign specific colors to transit lines
+- 🚏 **Station colors** - Color line badges by the station they depart from (useful when combining sensors of several stations in one card)
 - ⚡ **Visual configuration UI** - Easy setup through Home Assistant's UI
 
 ## Prerequisites
@@ -88,12 +89,38 @@ line_colors:        # Custom colors for specific lines
 |--------|------|---------|-------------|
 | `departure_count` | number | 7 | Number of departures to display (1-7) |
 | `line_colors` | array | [] | Custom colors for specific transit lines |
+| `station_colors` | array | [] | Colors per station; takes priority over `line_colors` |
+| `sensor_1` … `sensor_7` | string | `sensor.transit_departure_1` … `_7` | Sensors to display |
 
 #### Line Colors Configuration
 
 Each line color entry requires:
 - `line`: The line number/name as a string (e.g., "64", "5E")
 - `color`: Hex color code (e.g., "#FF5722")
+
+#### Station Colors Configuration
+
+If you combine departures of several stations in one card (by setting `sensor_1` … `sensor_7` to sensors of different stations), you can color the line badges by station. The visual editor lists all stations of the configured sensors automatically.
+
+Each station color entry requires:
+- `station`: The station name exactly as shown in the sensor's `station` attribute (Developer Tools → States)
+- `color`: Hex color code
+
+```yaml
+type: custom:steirische-linien-card
+sensor_1: sensor.transit_departure_1
+sensor_2: sensor.transit_departure_2
+sensor_3: sensor.transit_departure_3
+sensor_4: sensor.transit_departure_1_2
+sensor_5: sensor.transit_departure_2_2
+station_colors:
+  - station: "Graz Jakominiplatz"
+    color: "#FF9800"
+  - station: "Graz Hauptbahnhof"
+    color: "#4CAF50"
+```
+
+This requires a version of the integration that provides the `station` attribute.
 
 ## Display Features
 

@@ -113,6 +113,7 @@ class SteirischeLinienCard extends HTMLElement {
         if (attributes.line) {
           departures.push({
             line: attributes.line,
+            station: attributes.station || '',
             destination: attributes.destination || 'Unknown',
             minutes: parseInt(entity.state) || 0,
             time: attributes.departure_time || '',
@@ -149,13 +150,13 @@ class SteirischeLinienCard extends HTMLElement {
         statusText = 'FAHRPLAN';
       }
 
-      // Get custom color for this line
+      // Get custom color: station color takes priority over line color
       let lineColor = '';
-      if (this.config && this.config.line_colors) {
-        const colorConfig = this.config.line_colors.find(lc => lc.line === dep.line);
-        if (colorConfig && colorConfig.color) {
-          lineColor = `style="background-color: ${colorConfig.color}"`;
-        }
+      const stationConfig = (this.config.station_colors || []).find(sc => sc.station === dep.station);
+      const colorConfig = (this.config.line_colors || []).find(lc => lc.line === dep.line);
+      const color = (stationConfig && stationConfig.color) || (colorConfig && colorConfig.color);
+      if (color) {
+        lineColor = `style="background-color: ${this.escapeHtml(color)}"`;
       }
 
       return `
@@ -222,12 +223,15 @@ class SteirischeLinienCardEditor extends HTMLElement {
   render() {
     if (!this.hass || !this._config) return;
     
-    // Prevent re-rendering if already rendered with same config
-    const configString = JSON.stringify(this._config);
+    const stations = this.getStations();
+
+    // Prevent re-rendering if already rendered with same config and stations
+    const configString = JSON.stringify(this._config) + JSON.stringify(stations);
     if (this._lastConfigString === configString) return;
     this._lastConfigString = configString;
 
     const lineColors = this._config.line_colors || [];
+    const stationColors = this._config.station_colors || [];
 
     this.innerHTML = `
       <div class="card-config">
@@ -244,6 +248,35 @@ class SteirischeLinienCardEditor extends HTMLElement {
           </ha-select>
         </div>
         
+        <div class="config-section">
+          <h3 class="section-title">Station Colors</h3>
+          <p class="section-description">Color the line badges by the station they depart from (takes priority over line colors)</p>
+          ${stations.length === 0 ? `
+            <p class="section-description">No stations found. Update the Steiermark Öffis integration so the sensors provide a station attribute.</p>
+          ` : stations.map((station, index) => {
+            const sc = stationColors.find(c => c.station === station);
+            return `
+              <div class="station-color-row">
+                <input
+                  type="checkbox"
+                  class="station-color-enabled"
+                  data-index="${index}"
+                  ${sc ? 'checked' : ''}
+                  title="Use a color for this station"
+                />
+                <span class="station-name">${this.escapeHtml(station)}</span>
+                <input
+                  type="color"
+                  class="station-color"
+                  data-index="${index}"
+                  value="${sc && sc.color ? sc.color : '#2196F3'}"
+                  title="Choose color"
+                />
+              </div>
+            `;
+          }).join('')}
+        </div>
+
         <div class="config-section">
           <h3 class="section-title">Line Colors</h3>
           <p class="section-description">Set custom colors for specific line numbers</p>
@@ -311,6 +344,28 @@ class SteirischeLinienCardEditor extends HTMLElement {
           margin-bottom: 16px;
           align-items: center;
           height: 56px;
+        }
+        .station-color-row {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 12px;
+          align-items: center;
+          height: 40px;
+        }
+        .station-name {
+          flex: 1;
+          color: var(--primary-text-color);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .station-color {
+          width: 60px;
+          height: 100%;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          outline: 1px solid var(--outline-color);
         }
         .line-filter {
           flex: 1;
@@ -387,6 +442,35 @@ class SteirischeLinienCardEditor extends HTMLElement {
       });
     }
 
+    // Station colors
+    const updateStationColor = (index) => {
+      const station = stations[index];
+      const enabled = this.querySelector(`.station-color-enabled[data-index="${index}"]`).checked;
+      const color = this.querySelector(`.station-color[data-index="${index}"]`).value;
+      const stationColors = (this._config.station_colors || []).filter(sc => sc.station !== station);
+      if (enabled) {
+        stationColors.push({ station, color });
+      }
+      this._config = { ...this._config, station_colors: stationColors };
+      this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: this._config } }));
+    };
+
+    this.querySelectorAll('.station-color-enabled').forEach(checkbox => {
+      checkbox.addEventListener('change', () => updateStationColor(parseInt(checkbox.dataset.index)));
+    });
+
+    this.querySelectorAll('.station-color').forEach(colorInput => {
+      colorInput.addEventListener('change', (e) => {
+        e.stopPropagation();
+        const index = parseInt(colorInput.dataset.index);
+        // Picking a color enables it for this station
+        this.querySelector(`.station-color-enabled[data-index="${index}"]`).checked = true;
+        updateStationColor(index);
+      });
+      colorInput.addEventListener('click', (e) => e.stopPropagation());
+      colorInput.addEventListener('mousedown', (e) => e.stopPropagation());
+    });
+
     // Add line color button
     const addButton = this.querySelector('#add-line-color');
     addButton.addEventListener('click', () => {
@@ -436,6 +520,26 @@ class SteirischeLinienCardEditor extends HTMLElement {
         this.render();
       });
     });
+  }
+
+  // Distinct station names of the sensors configured in this card
+  getStations() {
+    const stations = [];
+    for (let i = 1; i <= 7; i++) {
+      const entityId = this._config[`sensor_${i}`] || `sensor.transit_departure_${i}`;
+      const entity = this._hass && this._hass.states[entityId];
+      const station = entity && entity.attributes.station;
+      if (station && !stations.includes(station)) {
+        stations.push(station);
+      }
+    }
+    return stations;
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   set hass(hass) {
