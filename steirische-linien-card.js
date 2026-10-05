@@ -1,3 +1,36 @@
+const STEIRISCHE_LINIEN_DOMAIN = 'steirische_linien';
+
+// All departure sensors of the integration, grouped by station name
+function findStationSensors(hass) {
+  const stations = new Map();
+  Object.keys(hass.states).forEach(entityId => {
+    if (!entityId.startsWith('sensor.')) return;
+    const attributes = hass.states[entityId].attributes;
+    const registryEntry = hass.entities && hass.entities[entityId];
+    const fromIntegration = registryEntry
+      ? registryEntry.platform === STEIRISCHE_LINIEN_DOMAIN
+      : 'available_lines' in attributes;
+    if (!fromIntegration || !attributes.station) return;
+    if (!stations.has(attributes.station)) stations.set(attributes.station, []);
+    stations.get(attributes.station).push(entityId);
+  });
+  stations.forEach(ids => ids.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
+  return new Map([...stations.entries()].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+// Entity ids shown by the card: all sensors of the selected stations, or sensor_1 … sensor_7
+function getCardEntities(hass, config) {
+  if (Array.isArray(config.stations)) {
+    const stations = findStationSensors(hass);
+    return config.stations.flatMap(station => stations.get(station) || []);
+  }
+  const entities = [];
+  for (let i = 1; i <= 7; i++) {
+    entities.push(config[`sensor_${i}`] || `sensor.transit_departure_${i}`);
+  }
+  return entities;
+}
+
 class SteirischeLinienCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
@@ -102,9 +135,8 @@ class SteirischeLinienCard extends HTMLElement {
 
     let departures = [];
     
-    // Collect all 7 departure sensors
-    for (let i = 1; i <= 7; i++) {
-      const entityId = this.config[`sensor_${i}`] || `sensor.transit_departure_${i}`;
+    // Collect the departure sensors of the selected stations
+    getCardEntities(this._hass, this.config).forEach((entityId, i) => {
       const entity = this._hass.states[entityId];
       
       if (entity && entity.state !== 'unavailable' && entity.state !== 'unknown') {
@@ -123,7 +155,7 @@ class SteirischeLinienCard extends HTMLElement {
           });
         }
       }
-    }
+    });
 
     // Sort by minutes
     departures.sort((a, b) => a.minutes - b.minutes);
@@ -133,6 +165,10 @@ class SteirischeLinienCard extends HTMLElement {
     departures = departures.slice(0, maxDepartures);
 
     // Render departures
+    if (Array.isArray(this.config.stations) && this.config.stations.length === 0) {
+      this.content.innerHTML = '<div class="no-departures">Keine Station ausgewählt</div>';
+      return;
+    }
     if (departures.length === 0) {
       this.content.innerHTML = '<div class="no-departures">Keine Abfahrten verfügbar</div>';
       return;
@@ -196,15 +232,10 @@ class SteirischeLinienCard extends HTMLElement {
     return document.createElement("steirische-linien-card-editor");
   }
 
-  static getStubConfig() {
+  static getStubConfig(hass) {
+    // New cards show all stations of the integration
     return {
-      sensor_1: "sensor.transit_departure_1",
-      sensor_2: "sensor.transit_departure_2",
-      sensor_3: "sensor.transit_departure_3",
-      sensor_4: "sensor.transit_departure_4",
-      sensor_5: "sensor.transit_departure_5",
-      sensor_6: "sensor.transit_departure_6",
-      sensor_7: "sensor.transit_departure_7"
+      stations: hass ? [...findStationSensors(hass).keys()] : []
     };
   }
 }
@@ -219,17 +250,16 @@ class SteirischeLinienCardEditor extends HTMLElement {
   // Stations of the configured sensors with their available lines
   getStations() {
     const stations = new Map();
-    for (let i = 1; i <= 7; i++) {
-      const entityId = this._config[`sensor_${i}`] || `sensor.transit_departure_${i}`;
-      const entity = this._hass && this._hass.states[entityId];
-      if (!entity) continue;
+    getCardEntities(this._hass, this._config).forEach(entityId => {
+      const entity = this._hass.states[entityId];
+      if (!entity) return;
       const attributes = entity.attributes;
       const station = attributes.station || '';
       if (!stations.has(station)) stations.set(station, new Set());
       const lines = stations.get(station);
       (attributes.available_lines || []).forEach(line => lines.add(line));
       if (attributes.line) lines.add(attributes.line);
-    }
+    });
     // Keep lines that already have a color, even if they are not departing right now
     (this._config.line_colors || []).forEach(lc => {
       if (lc.station !== undefined && stations.has(lc.station) && lc.line) {
@@ -246,36 +276,40 @@ class SteirischeLinienCardEditor extends HTMLElement {
     if (!this._hass || !this._config) return;
 
     const stations = this.getStations();
+    const allStations = [...findStationSensors(this._hass).keys()];
+    const selectedStations = Array.isArray(this._config.stations)
+      ? this._config.stations
+      : stations.map(s => s.station);
 
     // Prevent re-rendering if already rendered with same config and stations
-    const configString = JSON.stringify(this._config) + JSON.stringify(stations);
+    const configString = JSON.stringify(this._config) + JSON.stringify(stations) + JSON.stringify(allStations);
     if (this._lastConfigString === configString) return;
     this._lastConfigString = configString;
 
     const lineColors = this._config.line_colors || [];
     const stationColors = this._config.station_colors || [];
     const globalLineColors = lineColors.filter(lc => lc.station === undefined);
-    const count = this._config.departure_count || 7;
 
     this.innerHTML = `
       <div class="card-config">
         <div class="config-section">
-          <h3 class="section-title">Display Configuration</h3>
-          <label class="field">
-            <span>Number of departures</span>
-            <select id="departure_count">
-              ${[1, 2, 3, 4, 5, 6, 7].map(n => `
-                <option value="${n}" ${n === count ? 'selected' : ''}>${n} departure${n > 1 ? 's' : ''}</option>
-              `).join('')}
-            </select>
-          </label>
+          <h3 class="section-title">Stations</h3>
+          <p class="section-description">Choose the stations whose departures are shown in this card.</p>
+          ${allStations.length === 0 ? `
+            <p class="section-description">No stations found. Set up the Steiermark Öffis integration in Station Departures mode (version 1.2.4 or newer).</p>
+          ` : allStations.map((station, index) => `
+            <label class="color-row">
+              <input type="checkbox" class="station-select" data-index="${index}" ${selectedStations.includes(station) ? 'checked' : ''}>
+              <span class="name">${this.escapeHtml(station)}</span>
+            </label>
+          `).join('')}
         </div>
 
         <div class="config-section">
           <h3 class="section-title">Colors</h3>
           <p class="section-description">Tick a station or line and pick a color. A line color for a station takes priority over the station color.</p>
           ${stations.length === 0 ? `
-            <p class="section-description">No sensors found. Check the sensors of this card in Developer Tools → States.</p>
+            <p class="section-description">Select at least one station above.</p>
           ` : stations.map(({ station, lines }, s) => {
             const sc = stationColors.find(c => c.station === station);
             return `
@@ -323,12 +357,6 @@ class SteirischeLinienCardEditor extends HTMLElement {
         .config-section { margin-bottom: 24px; }
         .section-title { margin: 0 0 8px 0; font-size: 16px; font-weight: 500; color: var(--primary-text-color); }
         .section-description { margin: 0 0 12px 0; color: var(--secondary-text-color); font-size: 14px; }
-        .field { display: flex; flex-direction: column; gap: 4px; color: var(--secondary-text-color); font-size: 14px; }
-        select {
-          padding: 8px; font-size: 14px; border-radius: 4px;
-          border: 1px solid var(--divider-color);
-          background: var(--card-background-color); color: var(--primary-text-color);
-        }
         .station { border: 1px solid var(--divider-color); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
         .color-row { display: flex; gap: 10px; align-items: center; min-height: 36px; }
         .station-row { font-weight: 500; border-bottom: 1px solid var(--divider-color); margin-bottom: 4px; padding-bottom: 4px; }
@@ -350,9 +378,16 @@ class SteirischeLinienCardEditor extends HTMLElement {
       this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: this._config }, bubbles: true, composed: true }));
     };
 
-    this.querySelector('#departure_count').addEventListener('change', (e) => {
-      this._config = { ...this._config, departure_count: parseInt(e.target.value) };
-      fireChanged();
+    this.querySelectorAll('.station-select').forEach(checkbox => {
+      checkbox.addEventListener('change', () => {
+        const selected = allStations.filter((station, index) =>
+          this.querySelector(`.station-select[data-index="${index}"]`).checked);
+        // The station selection replaces the manually configured sensors
+        const config = { ...this._config, stations: selected };
+        for (let i = 1; i <= 7; i++) delete config[`sensor_${i}`];
+        this._config = config;
+        fireChanged();
+      });
     });
 
     const selector = (kind, s, l) =>

@@ -60,7 +60,7 @@ A installation tutorial is available on YouTube (Video in German!): https://yout
    - Or Manual card → Type: `custom:steirische-linien-card`
 
 2. **Configure options** through the visual editor:
-   - **Number of departures**: Select how many departures to display (1-7)
+   - **Stations**: Tick the stations whose departures are shown. The card finds the sensors of each station automatically, no entity IDs needed.
    - **Colors**: All stations of the configured sensors and their lines are listed automatically. Tick a station or a line and pick a color.
 
 ### YAML Configuration
@@ -91,10 +91,11 @@ line_colors:        # Custom colors for specific lines
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `departure_count` | number | 7 | Number of departures to display (1-7) |
+| `stations` | array | all stations | Station names whose departures are shown (sensors are found automatically) |
+| `departure_count` | number | 7 | Number of departures to display (YAML only) |
 | `line_colors` | array | [] | Custom colors for specific transit lines |
 | `station_colors` | array | [] | Colors per station; takes priority over `line_colors` |
-| `sensor_1` … `sensor_7` | string | `sensor.transit_departure_1` … `_7` | Sensors to display |
+| `sensor_1` … `sensor_7` | string | `sensor.transit_departure_1` … `_7` | Sensors to display (only used without `stations`) |
 
 #### Line Colors Configuration
 
@@ -107,7 +108,7 @@ Color priority: line color for a station → station color → line color withou
 
 #### Station Colors Configuration
 
-If you combine departures of several stations in one card (by setting `sensor_1` … `sensor_7` to sensors of different stations), you can color the line badges by station. The visual editor lists all stations of the configured sensors automatically.
+If you combine departures of several stations in one card, you can color the line badges by station. The visual editor lists all stations of the configured sensors automatically.
 
 Each station color entry requires:
 - `station`: The station name exactly as shown in the sensor's `station` attribute (Developer Tools → States)
@@ -115,11 +116,9 @@ Each station color entry requires:
 
 ```yaml
 type: custom:steirische-linien-card
-sensor_1: sensor.transit_departure_1
-sensor_2: sensor.transit_departure_2
-sensor_3: sensor.transit_departure_3
-sensor_4: sensor.transit_departure_1_2
-sensor_5: sensor.transit_departure_2_2
+stations:
+  - "Graz Jakominiplatz"
+  - "Graz Hauptbahnhof"
 station_colors:
   - station: "Graz Jakominiplatz"
     color: "#FF9800"
@@ -136,7 +135,7 @@ line_colors:
     color: "#2196F3"
 ```
 
-This requires the integration version 1.2.3 or newer (attributes `station` and `available_lines`).
+This requires the integration version 1.2.4 or newer (attributes `station` and `available_lines`).
 
 ### Troubleshooting: card shows the old name "PH Steiermark Oeffi Card"
 
